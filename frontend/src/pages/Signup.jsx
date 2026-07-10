@@ -1,23 +1,12 @@
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
-import { FaEye, FaEyeSlash } from 'react-icons/fa';
 import Scene3D from '../components/Scene3D';
 import { useAuth } from '../context/AuthContext';
 import './Auth.css';
 
 export default function Signup({ onNavigate }) {
   const { api, loginSuccess } = useAuth();
-
-  const [form, setForm] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirm_password: '',
-  });
-
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
+  const [form, setForm] = useState({ name: '', email: '', password: '', confirm_password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -26,14 +15,10 @@ export default function Signup({ onNavigate }) {
   }
 
   function clientValidationError() {
-    if (form.password.length < 8)
-      return 'Password must be at least 8 characters long.';
-    if (!/[A-Z]/.test(form.password))
-      return 'Password must contain at least one uppercase letter.';
-    if (!/[0-9]/.test(form.password))
-      return 'Password must contain at least one number.';
-    if (form.password !== form.confirm_password)
-      return 'Passwords do not match.';
+    if (form.password.length < 8) return 'Password must be at least 8 characters long.';
+    if (!/[A-Z]/.test(form.password)) return 'Password must contain at least one uppercase letter.';
+    if (!/[0-9]/.test(form.password)) return 'Password must contain at least one number.';
+    if (form.password !== form.confirm_password) return 'Passwords do not match.';
     return '';
   }
 
@@ -48,26 +33,20 @@ export default function Signup({ onNavigate }) {
     }
 
     setLoading(true);
-
     try {
       const res = await api.post('/auth/register', form);
       loginSuccess(res.data.access_token, res.data.user);
       toast.success('Account created — welcome!');
     } catch (err) {
       const detail = err?.response?.data?.detail;
-
       if (typeof detail === 'string') {
         setError(detail);
       } else if (Array.isArray(detail)) {
         setError(detail.map((d) => d.msg || JSON.stringify(d)).join(' '));
       } else if (err?.code === 'ERR_NETWORK' || !err?.response) {
-        setError(
-          'Could not reach the server. Check that the backend is running and reachable.'
-        );
+        setError('Could not reach the server. Check that the backend is running and reachable.');
       } else {
-        setError(
-          `Server error (${err?.response?.status || 'unknown'}). Please try again.`
-        );
+        setError(`Server error (${err?.response?.status || 'unknown'}). Please try again.`);
       }
     } finally {
       setLoading(false);
@@ -77,23 +56,14 @@ export default function Signup({ onNavigate }) {
   return (
     <div className="auth-page">
       <Scene3D />
-
       <form className="auth-card" onSubmit={handleSubmit}>
         <div className="auth-logo">
-          <img
-            src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSn-R6R8XHYlhMXEEX4aPCBAXIuLPiXY1AocvchZo4w6A&s=10"
-            alt="Abi Tech"
-            className="auth-logo-img"
-          />
-          ABI-TECH QA-ENGINE
+        <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSn-R6R8XHYlhMXEEX4aPCBAXIuLPiXY1AocvchZo4w6A&s=10" alt="img" className="auth-logo-img"/>
+         ABI-TECH QA-ENGINE
         </div>
-
         <h1 className="auth-title">Create your account</h1>
-        <p className="auth-subtitle">
-          Start generating test cases in minutes.
-        </p>
+        <p className="auth-subtitle">Start generating test cases in minutes.</p>
 
-        {/* Full Name */}
         <div className="auth-field">
           <label>Full Name</label>
           <input
@@ -105,7 +75,6 @@ export default function Signup({ onNavigate }) {
           />
         </div>
 
-        {/* Email */}
         <div className="auth-field">
           <label>Email</label>
           <input
@@ -118,89 +87,40 @@ export default function Signup({ onNavigate }) {
           />
         </div>
 
-        {/* Password */}
         <div className="auth-field">
           <label>Password</label>
-
-          <div className="password-wrapper">
-            <input
-              type={showPassword ? 'text' : 'password'}
-              required
-              value={form.password}
-              onChange={(e) => update('password', e.target.value)}
-              placeholder="Password"
-              autoComplete="new-password"
-            />
-
-            <span
-              className="password-toggle"
-              onClick={() => setShowPassword(!showPassword)}
-            >
-              {showPassword ? <FaEyeSlash /> : <FaEye />}
-            </span>
-          </div>
-
-          <div className="auth-footer">
-            At least 8 characters, 1 uppercase, 1 number
-          </div>
+          <input
+            type="password"
+            required
+            value={form.password}
+            onChange={(e) => update('password', e.target.value)}
+            placeholder="Password"
+            autoComplete="new-password"
+          />
+          <div className='auth-footer'>At least 8 characters, 1 uppercase, 1 number</div>
         </div>
 
-        {/* Confirm Password */}
         <div className="auth-field">
           <label>Confirm Password</label>
-
-          <div className="password-wrapper">
-            <input
-              type={showConfirmPassword ? 'text' : 'password'}
-              required
-              value={form.confirm_password}
-              onChange={(e) =>
-                update('confirm_password', e.target.value)
-              }
-              placeholder="Confirm Password"
-              autoComplete="new-password"
-            />
-
-            <span
-              className="password-toggle"
-              onClick={() =>
-                setShowConfirmPassword(!showConfirmPassword)
-              }
-            >
-              {showConfirmPassword ? (
-                <FaEyeSlash />
-              ) : (
-                <FaEye />
-              )}
-            </span>
-          </div>
+          <input
+            type="password"
+            required
+            value={form.confirm_password}
+            onChange={(e) => update('confirm_password', e.target.value)}
+            placeholder="Confirm Password"
+            autoComplete="new-password"
+          />
         </div>
 
-        {error && (
-          <div
-            className="field-error"
-            style={{ marginBottom: 14 }}
-          >
-            {error}
-          </div>
-        )}
+        {error && <div className="field-error" style={{ marginBottom: 14 }}>{error}</div>}
 
-        <button
-          className="auth-submit"
-          type="submit"
-          disabled={loading}
-        >
+        <button className="auth-submit" type="submit" disabled={loading}>
           {loading ? 'Creating account...' : 'Sign Up'}
         </button>
 
         <div className="auth-footer">
           Already have an account?{' '}
-          <span
-            className="auth-link"
-            onClick={() => onNavigate('login')}
-          >
-            Log in
-          </span>
+          <span className="auth-link" onClick={() => onNavigate('login')}>Log in</span>
         </div>
       </form>
     </div>
