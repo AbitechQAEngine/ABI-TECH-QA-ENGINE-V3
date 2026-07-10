@@ -103,13 +103,56 @@
   border-color: #1455B9;
   box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.15);
 }
+.password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
 
+.password-wrapper input {
+  width: 100%;
+  padding-right: 45px;
+  box-sizing: border-box;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 15px;
+  cursor: pointer;
+  color: #666;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.password-toggle:hover {
+  color: #000;
+}
 .auth-field .field-error {
   color: #f87171;
   font-size: 12px;
   margin-top: 5px;
 }
+.password-wrapper {
+  position: relative;
+}
 
+.password-wrapper input {
+  width: 100%;
+  padding-right: 45px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 15px;
+  transform: translateY(-50%);
+  cursor: pointer;
+  font-size: 18px;
+  color: #666;
+}
 .auth-submit {
   width: 100%;
   padding: 12px;
