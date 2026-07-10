@@ -20,6 +20,58 @@ def get_client():
         raise HTTPException(status_code=500, detail="GROQ_API_KEY not set")
     return Groq(api_key=api_key)
 
+
+def parse_test_cases_json(raw: str):
+    """Parse the AI's response into a JSON array of test cases, tolerating
+    the common formatting slips models make (code fences, stray prose
+    before/after the array, trailing commas)."""
+    import re
+
+    content = raw.strip()
+
+    # Strip ```json ... ``` or ``` ... ``` code fences
+    if "```" in content:
+        parts = content.split("```")
+        # Prefer a fenced block that actually contains a JSON array
+        candidates = [p[4:] if p.strip().lower().startswith("json") else p for p in parts]
+        candidates = [c.strip() for c in candidates if "[" in c]
+        if candidates:
+            content = candidates[0]
+
+    # If there's extra prose around the array, isolate the outermost [ ... ]
+    start = content.find("[")
+    end = content.rfind("]")
+    if start != -1 and end != -1 and end > start:
+        content = content[start:end + 1]
+
+    def try_load(text):
+        return json.loads(text)
+
+    try:
+        return try_load(content)
+    except json.JSONDecodeError:
+        pass
+
+    # Common fixup: trailing commas before a closing ] or }
+    fixed = re.sub(r",\s*([\]}])", r"\1", content)
+    try:
+        return try_load(fixed)
+    except json.JSONDecodeError:
+        pass
+
+    # Common fixup: missing comma between adjacent objects "}\s*{"
+    fixed2 = re.sub(r"}\s*{", "},{", fixed)
+    try:
+        return try_load(fixed2)
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "The AI response could not be parsed as valid test case data "
+                f"({e.msg} at line {e.lineno}, column {e.colno}). Please try generating again."
+            ),
+        )
+
 def smart_rename(df):
     """Rename columns to standard names using lowercase + strip matching."""
     # First strip ALL column names of whitespace and special chars
@@ -126,13 +178,7 @@ Generate 3-5 test cases per type requested. Return as a JSON array only."""
             max_tokens=2000
         )
         content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
-        test_cases = json.loads(content.strip())
-
-        # --- Sequential Test Case ID logic (BRD Module 7 / BR-04 to BR-08) ---
+        test_cases = parse_test_cases_json(content)
         if request.custom_start_id is not None:
             if request.custom_start_id <= 0:
                 raise HTTPException(status_code=422, detail="Starting Test Case ID must be greater than zero")
@@ -245,7 +291,7 @@ async def list_project_test_cases(
     ]
 
 
-@router.put("/{test_case_id}")
+@router.put("/{test_case_id:int}")
 async def update_test_case(
     test_case_id: int,
     payload: dict,
@@ -276,7 +322,7 @@ async def update_test_case(
     }
 
 
-@router.delete("/{test_case_id}", status_code=204)
+@router.delete("/{test_case_id:int}", status_code=204)
 async def delete_test_case(
     test_case_id: int,
     db: Session = Depends(get_db),
@@ -472,13 +518,7 @@ Generate 8-12 test cases based on what you see in the screenshot."""
         )
 
         content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
-        test_cases = json.loads(content.strip())
-
-        # Continue the same project-wide sequential Test Case numbering used
+        test_cases = parse_test_cases_json(content)
         # by the text-based generator (BRD Module 7), so screenshot-derived
         # cases slot in right after the last one shown in the table.
         start_id = project.test_case_counter + 1
