@@ -21,10 +21,63 @@ def get_client():
     return Groq(api_key=api_key)
 
 
+def _escape_raw_control_chars_in_strings(text: str) -> str:
+    """Models very often emit a literal newline/tab inside a JSON string
+    value (e.g. inside "steps") instead of the escaped \\n. That is invalid
+    JSON and is the most common cause of 'Expecting , delimiter' errors.
+    This walks the text once, tracking whether we're inside a string
+    literal, and escapes raw control characters found there."""
+    out = []
+    in_string = False
+    escaped = False
+    for ch in text:
+        if in_string:
+            if escaped:
+                out.append(ch)
+                escaped = False
+                continue
+            if ch == "\\":
+                out.append(ch)
+                escaped = True
+                continue
+            if ch == '"':
+                out.append(ch)
+                in_string = False
+                continue
+            if ch == "\n":
+                out.append("\\n")
+                continue
+            if ch == "\r":
+                continue
+            if ch == "\t":
+                out.append("\\t")
+                continue
+            out.append(ch)
+        else:
+            if ch == '"':
+                in_string = True
+            out.append(ch)
+    return "".join(out)
+
+
+def _recover_truncated_array(text: str):
+    """If the model's response got cut off mid-array (hit max_tokens), try
+    to salvage the complete objects that were returned and close the array."""
+    last_complete = text.rfind("}")
+    if last_complete == -1:
+        return None
+    salvaged = text[: last_complete + 1] + "]"
+    try:
+        return json.loads(salvaged)
+    except json.JSONDecodeError:
+        return None
+
+
 def parse_test_cases_json(raw: str):
     """Parse the AI's response into a JSON array of test cases, tolerating
     the common formatting slips models make (code fences, stray prose
-    before/after the array, trailing commas)."""
+    before/after the array, trailing commas, raw newlines inside strings,
+    truncated output)."""
     import re
 
     content = raw.strip()
@@ -40,37 +93,47 @@ def parse_test_cases_json(raw: str):
 
     # If there's extra prose around the array, isolate the outermost [ ... ]
     start = content.find("[")
+    if start != -1:
+        content = content[start:]
     end = content.rfind("]")
-    if start != -1 and end != -1 and end > start:
-        content = content[start:end + 1]
+    if end != -1:
+        content = content[: end + 1]
 
     def try_load(text):
         return json.loads(text)
 
-    try:
-        return try_load(content)
-    except json.JSONDecodeError:
-        pass
+    attempts = [content]
 
-    # Common fixup: trailing commas before a closing ] or }
-    fixed = re.sub(r",\s*([\]}])", r"\1", content)
-    try:
-        return try_load(fixed)
-    except json.JSONDecodeError:
-        pass
+    # Fixup 1: escape raw control characters that landed inside string values
+    attempts.append(_escape_raw_control_chars_in_strings(content))
 
-    # Common fixup: missing comma between adjacent objects "}\s*{"
-    fixed2 = re.sub(r"}\s*{", "},{", fixed)
-    try:
-        return try_load(fixed2)
-    except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                "The AI response could not be parsed as valid test case data "
-                f"({e.msg} at line {e.lineno}, column {e.colno}). Please try generating again."
-            ),
-        )
+    # Fixup 2: trailing commas before a closing ] or }
+    attempts.append(re.sub(r",\s*([\]}])", r"\1", attempts[-1]))
+
+    # Fixup 3: missing comma between adjacent objects "}\s*{"
+    attempts.append(re.sub(r"}\s*{", "},{", attempts[-1]))
+
+    last_error = None
+    for candidate in attempts:
+        try:
+            return try_load(candidate)
+        except json.JSONDecodeError as e:
+            last_error = e
+
+    # Last resort: the response may have been cut off before it finished —
+    # salvage whatever complete test case objects are present.
+    recovered = _recover_truncated_array(attempts[-1])
+    if recovered:
+        return recovered
+
+    raise HTTPException(
+        status_code=502,
+        detail=(
+            "The AI response could not be parsed as valid test case data "
+            f"({last_error.msg} at line {last_error.lineno}, column {last_error.colno}). "
+            "Please try generating again."
+        ),
+    )
 
 def smart_rename(df):
     """Rename columns to standard names using lowercase + strip matching."""
@@ -175,7 +238,7 @@ Generate 3-5 test cases per type requested. Return as a JSON array only."""
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
-            max_tokens=2000
+            max_tokens=3500
         )
         content = response.choices[0].message.content.strip()
         test_cases = parse_test_cases_json(content)
@@ -514,7 +577,7 @@ Generate 8-12 test cases based on what you see in the screenshot."""
                 }
             ],
             temperature=0.3,
-            max_tokens=3000
+            max_tokens=4000
         )
 
         content = response.choices[0].message.content.strip()
